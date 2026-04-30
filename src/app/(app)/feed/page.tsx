@@ -1,7 +1,7 @@
 "use client";
 
-import { useMemo, useState } from "react";
-import { PaperCard } from "@/components/PaperCard";
+import { useEffect, useMemo, useState } from "react";
+import { PaperCard, type PaperLike } from "@/components/PaperCard";
 import { SAMPLE_PAPERS } from "@/lib/sample-papers";
 import { TOPICS } from "@/lib/topics";
 
@@ -13,33 +13,120 @@ const FEATURED_TOPIC_IDS = [
 ];
 const FEATURED = TOPICS.filter((t) => FEATURED_TOPIC_IDS.includes(t.id));
 
-function matches(paper: { topics?: string[]; bluf?: string }, q: string) {
+function matches(paper: { topics?: string[] | null; bluf?: string | null }, q: string) {
   const lower = q.toLowerCase();
   if (paper.topics?.some((t) => t.toLowerCase().includes(lower))) return true;
   if (paper.bluf?.toLowerCase().includes(lower)) return true;
   return false;
 }
 
+type DbPaper = {
+  id: string;
+  sourceSlug: string;
+  externalId: string;
+  title: string;
+  abstract: string | null;
+  bluf: string | null;
+  clinicalImplications: string | null;
+  blufIsAi: boolean;
+  authors: string[];
+  journal: string | null;
+  year: number | null;
+  topics: string[];
+  url: string;
+  readingMinutes: number | null;
+  jargon: "plain" | "medium" | "heavy" | null;
+  evidence: string;
+};
+
+const SOURCE_LABEL: Record<string, { label: string; tone: "pink" | "lavender" | "babyblue" | "neutral" }> = {
+  pubmed: { label: "PubMed", tone: "babyblue" },
+  openalex: { label: "OpenAlex", tone: "babyblue" },
+  europepmc: { label: "Europe PMC", tone: "lavender" },
+  medrxiv: { label: "medRxiv", tone: "pink" },
+  semanticscholar: { label: "Semantic Scholar", tone: "lavender" },
+  plos: { label: "PLOS", tone: "lavender" },
+  doaj: { label: "DOAJ", tone: "neutral" },
+  crossref: { label: "Crossref", tone: "babyblue" },
+  nimh: { label: "NIMH", tone: "lavender" },
+  samhsa: { label: "SAMHSA", tone: "pink" },
+  "who-mh": { label: "WHO", tone: "babyblue" },
+};
+
+function dbToPaperLike(p: DbPaper): PaperLike {
+  const src = SOURCE_LABEL[p.sourceSlug] ?? { label: p.sourceSlug, tone: "neutral" as const };
+  return {
+    id: p.id,
+    title: p.title,
+    bluf: p.bluf ?? p.title,
+    clinicalImplications: p.clinicalImplications,
+    abstract: p.abstract,
+    authors: p.authors ?? [],
+    journal: p.journal,
+    year: p.year,
+    source: src.label,
+    sourceTone: src.tone,
+    evidenceKind: p.evidence !== "unknown" ? p.evidence : null,
+    url: p.url,
+    topics: p.topics ?? [],
+    readingMinutes: p.readingMinutes,
+    jargon: p.jargon,
+    isAiSummarized: p.blufIsAi,
+  };
+}
+
 export default function FeedPage() {
   const [topic, setTopic] = useState("all");
+  const [livePapers, setLivePapers] = useState<PaperLike[] | null>(null);
+  const [loaded, setLoaded] = useState(false);
+
+  useEffect(() => {
+    let cancelled = false;
+    fetch("/api/papers")
+      .then((r) => r.json())
+      .then((data) => {
+        if (cancelled) return;
+        if (Array.isArray(data.papers) && data.papers.length > 0) {
+          setLivePapers(data.papers.map(dbToPaperLike));
+        }
+        setLoaded(true);
+      })
+      .catch(() => setLoaded(true));
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  const all: PaperLike[] = livePapers ?? SAMPLE_PAPERS;
+  const usingSamples = livePapers === null;
 
   const papers = useMemo(() => {
-    if (topic === "all") return SAMPLE_PAPERS;
-    return SAMPLE_PAPERS.filter((p) => matches(p, topic));
-  }, [topic]);
+    if (topic === "all") return all;
+    return all.filter((p) => matches(p, topic));
+  }, [topic, all]);
 
   return (
     <div>
-      {/* Banner: sample data */}
-      <div className="rounded-2xl bg-gradient-to-r from-pink-100 via-lavender-100 to-babyblue-100 border border-pink-200 px-4 py-3 mb-4 text-sm">
-        <p className="font-display font-semibold text-pink-700">
-          🌸 Welcome! These are <span className="underline decoration-wavy">sample papers</span> while we connect your sources.
-        </p>
-        <p className="text-ink-soft text-xs mt-0.5">
-          Real research will replace them after the first refresh (or on the
-          1st of next month). Tap underlined terms to define them.
-        </p>
-      </div>
+      {/* Banner */}
+      {usingSamples ? (
+        <div className="rounded-2xl bg-gradient-to-r from-pink-100 via-lavender-100 to-babyblue-100 border border-pink-200 px-4 py-3 mb-4 text-sm">
+          <p className="font-display font-semibold text-pink-700">
+            🌸 Welcome! These are <span className="underline decoration-wavy">sample papers</span> while we connect your sources.
+          </p>
+          <p className="text-ink-soft text-xs mt-0.5">
+            Hit Refresh on a source in <strong>Settings</strong> to pull real research, or wait for the 1st-of-month auto-update.
+          </p>
+        </div>
+      ) : (
+        <div className="rounded-2xl bg-gradient-to-r from-babyblue-100 via-pink-100 to-lavender-100 border border-babyblue-200 px-4 py-3 mb-4 text-sm">
+          <p className="font-display font-semibold text-babyblue-700">
+            ✨ Showing {all.length} live paper{all.length === 1 ? "" : "s"} from your sources.
+          </p>
+          <p className="text-ink-soft text-xs mt-0.5">
+            Tap underlined terms for quick definitions. AI-generated summaries are clearly labeled.
+          </p>
+        </div>
+      )}
 
       {/* Topic pills row */}
       <div className="-mx-4 px-4 mb-5 overflow-x-auto pb-1">
@@ -77,21 +164,23 @@ export default function FeedPage() {
 
       {/* Feed */}
       <div className="space-y-4">
-        {papers.length === 0 && (
+        {!loaded && (
+          <div className="rounded-3xl bg-white/60 border border-pink-100 p-8 text-center text-ink-mute text-sm">
+            Loading…
+          </div>
+        )}
+        {loaded && papers.length === 0 && (
           <div className="rounded-3xl bg-white/70 border border-pink-100 p-8 text-center">
             <p className="text-3xl mb-2">🌷</p>
             <p className="font-display font-bold text-ink mb-1">
               No papers match this topic yet
             </p>
             <p className="text-sm text-ink-soft">
-              Try another filter, or hit refresh in Settings to pull fresh
-              papers from PubMed.
+              Try another filter, or hit refresh in Settings to pull fresh papers.
             </p>
           </div>
         )}
-        {papers.map((p) => (
-          <PaperCard key={p.id} paper={p} />
-        ))}
+        {loaded && papers.map((p) => <PaperCard key={p.id} paper={p} />)}
       </div>
     </div>
   );
