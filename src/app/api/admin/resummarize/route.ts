@@ -42,13 +42,17 @@ export async function POST(req: Request) {
   let dropped = 0;
   let errors = 0;
 
+  // Groq free tier ~30 RPM — pace calls at 2.2s each.
+  const PACE_MS = 2200;
+  let lastErrors: string[] = [];
+
   for (const p of rows) {
     if (!p.abstract || p.abstract.length < 200) {
       skipped++;
       continue;
     }
     try {
-      const ai = await summarisePaper({
+      const ai = await summarisePaperWithRetry({
         title: p.title,
         abstract: p.abstract,
         evidence: p.evidence,
@@ -58,7 +62,6 @@ export async function POST(req: Request) {
         continue;
       }
       if ("skip" in ai) {
-        // AI now judges this paper non-clinical — delete it.
         await db.delete(papers).where(eq(papers.id, p.id));
         dropped++;
         continue;
@@ -72,9 +75,32 @@ export async function POST(req: Request) {
         })
         .where(eq(papers.id, p.id));
       updated++;
-    } catch {
+    } catch (e) {
       errors++;
+      lastErrors.push(e instanceof Error ? e.message : String(e));
+      if (lastErrors.length > 5) lastErrors = lastErrors.slice(-5);
     }
+    await sleep(PACE_MS);
+  }
+
+  function sleep(ms: number) {
+    return new Promise((r) => setTimeout(r, ms));
+  }
+
+  async function summarisePaperWithRetry(input: {
+    title: string;
+    abstract: string;
+    evidence: string;
+  }) {
+    let attempt = 0;
+    while (attempt < 3) {
+      const ai = await summarisePaper(input);
+      if (ai) return ai;
+      attempt++;
+      // Linear backoff for rate-limit recovery
+      await sleep(2000 * attempt);
+    }
+    return null;
   }
 
   return NextResponse.json({
@@ -84,5 +110,6 @@ export async function POST(req: Request) {
     skipped,
     dropped,
     errors,
+    sampleErrors: lastErrors,
   });
 }

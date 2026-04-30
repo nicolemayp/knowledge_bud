@@ -53,11 +53,17 @@ export async function summarisePaper(args: {
       model: MODEL,
       messages: [{ role: "user", content: prompt }],
       temperature: 0.2,
-      max_tokens: 400,
+      max_tokens: 600,
       response_format: { type: "json_object" },
     });
     const text = res.choices[0]?.message?.content ?? "";
-    const parsed = JSON.parse(text);
+    let parsed: { is_clinical?: boolean; bluf?: string; clinical_implications?: string };
+    try {
+      parsed = JSON.parse(text);
+    } catch (parseErr) {
+      console.error("[ai.summarisePaper] JSON parse failed:", parseErr, "raw:", text.slice(0, 200));
+      return null;
+    }
     if (parsed.is_clinical === false) {
       // Caller should skip insertion of non-clinical papers.
       return { skip: true } as const;
