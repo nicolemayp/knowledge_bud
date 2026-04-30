@@ -86,6 +86,7 @@ export const papers = pgTable(
     year: integer("year"),
     abstract: text("abstract"),
     bluf: text("bluf"),                                // 1-sentence takeaway
+    clinicalImplications: text("clinical_implications"), // 1–2 sentences for therapists
     blufIsAi: boolean("bluf_is_ai").notNull().default(false),
     evidence: evidenceKind("evidence").notNull().default("unknown"),
     keyStats: jsonb("key_stats")

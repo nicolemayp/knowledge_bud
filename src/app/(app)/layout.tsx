@@ -3,6 +3,7 @@ import { redirect } from "next/navigation";
 import Link from "next/link";
 import { BottomTabs } from "@/components/BottomTabs";
 import { Logo } from "@/components/Logo";
+import { AskFab } from "@/components/AskFab";
 
 export default async function AppLayout({
   children,
@@ -37,6 +38,7 @@ export default async function AppLayout({
         {children}
       </main>
 
+      <AskFab />
       <BottomTabs />
     </div>
   );

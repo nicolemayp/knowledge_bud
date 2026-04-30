@@ -4,21 +4,19 @@ import { getSource } from "@/lib/sources";
 import { getUserId } from "@/lib/auth";
 import { getDb, hasDb } from "@/lib/db/client";
 import { papers, refreshLog, sourcesState } from "@/lib/db/schema";
-import { searchPubMed, fetchPubMedRecords } from "@/lib/sources/pubmed";
+import { getFetcher } from "@/lib/sources/index";
+import { PUBMED_TOPIC_QUERY } from "@/lib/topics";
 import { computeReading } from "@/lib/reading";
+import { summarisePaper, getGroq } from "@/lib/ai";
 
-const TOPIC_QUERY: Record<string, string> = {
-  cbt: "(cognitive behavioral therapy[mh] OR CBT[tiab]) AND (depression OR anxiety OR PTSD)",
-  dbt: "dialectical behavior therapy[tiab] OR DBT[tiab]",
-  trauma: "trauma[tiab] OR traumatic[tiab]",
-  ptsd: "PTSD[tiab] OR post-traumatic stress[tiab]",
-  depression: "major depressive disorder[mh] OR depression[tiab]",
-  anxiety: "anxiety disorders[mh] OR anxiety[tiab]",
-  mindfulness: "mindfulness[tiab] OR meditation[tiab]",
-  adolescent: "adolescent[mh] AND (mental health[tiab] OR psychiatric[tiab])",
-  neuroscience: "neuroscience[tiab] AND (psychiatric OR mental health)",
-  psychopharm: "psychopharmacology[tiab] OR antidepressant[tiab]",
-};
+// We only run a small subset of topics on a manual refresh to stay polite
+// to upstream APIs. Cron uses the full topic list.
+const QUICK_TOPICS = [
+  "cbt", "dbt", "trauma", "ptsd", "depression", "anxiety",
+  "mindfulness", "adolescent", "attention", "neuroplasticity",
+];
+
+export const maxDuration = 60;
 
 /** POST /api/sources/[slug]/refresh — manual refresh by the user. */
 export async function POST(
@@ -38,18 +36,16 @@ export async function POST(
 
   if (!hasDb()) {
     return NextResponse.json(
-      {
-        error:
-          "Database not connected — set DATABASE_URL to enable refresh.",
-      },
+      { error: "Database not connected — set DATABASE_URL to enable refresh." },
       { status: 503 }
     );
   }
 
-  if (slug !== "pubmed") {
+  const fetcher = getFetcher(slug);
+  if (!fetcher) {
     return NextResponse.json(
       {
-        error: `Fetcher for ${source.name} ships in the next iteration. PubMed is wired up.`,
+        error: `Fetcher for ${source.name} hasn't shipped yet — coming next iteration.`,
       },
       { status: 501 }
     );
@@ -61,59 +57,86 @@ export async function POST(
     .values({ sourceSlug: slug, kind: "manual", userId })
     .returning({ id: refreshLog.id });
 
-  try {
-    let added = 0;
-    for (const [topicKey, query] of Object.entries(TOPIC_QUERY)) {
-      const ids = await searchPubMed(query, { sinceDays: 35, retmax: 5 });
-      if (ids.length === 0) continue;
+  const aiAvailable = Boolean(getGroq());
+  let added = 0;
+  let summarised = 0;
 
-      const records = await fetchPubMedRecords(ids);
+  try {
+    for (const topicKey of QUICK_TOPICS) {
+      const query = PUBMED_TOPIC_QUERY[topicKey];
+      if (!query) continue;
+
+      let records;
+      try {
+        records = await fetcher(query, { sinceDays: 35, max: 3 });
+      } catch (e) {
+        console.warn(`[refresh] ${slug}/${topicKey} failed:`, e);
+        continue;
+      }
+
       for (const r of records) {
+        // Generate AI BLUF + clinical implications when Groq is available
+        // and we have an abstract to summarise.
+        let bluf: string | null = firstSentence(r.abstract) ?? r.title;
+        let clinicalImplications: string | null = null;
+        let blufIsAi = false;
+        if (aiAvailable && r.abstract && r.abstract.length > 200) {
+          const ai = await summarisePaper({
+            title: r.title,
+            abstract: r.abstract,
+            evidence: source.reliability,
+          });
+          if (ai) {
+            bluf = ai.bluf;
+            clinicalImplications = ai.clinicalImplications;
+            blufIsAi = true;
+            summarised++;
+          }
+        }
         const { readingMinutes, jargon } = computeReading(r.abstract);
         const result = await db
           .insert(papers)
           .values({
-            sourceSlug: "pubmed",
-            externalId: r.pmid,
+            sourceSlug: slug,
+            externalId: r.externalId,
             doi: r.doi ?? null,
             title: r.title,
             authors: r.authors,
             journal: r.journal ?? null,
             year: r.year ?? null,
             abstract: r.abstract ?? null,
-            // BLUF defaults to first sentence of the abstract until AI step lands.
-            bluf: firstSentence(r.abstract) ?? r.title,
-            blufIsAi: false,
+            bluf,
+            clinicalImplications,
+            blufIsAi,
             url: r.url,
             topics: [topicKey],
             readingMinutes,
             jargon: jargon ?? null,
             evidence: "unknown",
             keyStats: [],
+            publishedAt: r.publishedAt ?? null,
           })
           .onConflictDoNothing()
           .returning({ id: papers.id });
         if (result.length > 0) added++;
       }
 
-      // Be polite — small breather between topic queries.
-      await new Promise((r) => setTimeout(r, 350));
+      await new Promise((r) => setTimeout(r, 250));
     }
 
-    // Update counters
     await db
       .insert(sourcesState)
       .values({
         slug,
-        requestsToday: 1,
-        requestsThisMonth: 1,
+        requestsToday: QUICK_TOPICS.length,
+        requestsThisMonth: QUICK_TOPICS.length,
         lastRefreshAt: new Date(),
       })
       .onConflictDoUpdate({
         target: sourcesState.slug,
         set: {
-          requestsToday: sql`${sourcesState.requestsToday} + 1`,
-          requestsThisMonth: sql`${sourcesState.requestsThisMonth} + 1`,
+          requestsToday: sql`${sourcesState.requestsToday} + ${QUICK_TOPICS.length}`,
+          requestsThisMonth: sql`${sourcesState.requestsThisMonth} + ${QUICK_TOPICS.length}`,
           lastRefreshAt: new Date(),
         },
       });
@@ -123,7 +146,12 @@ export async function POST(
       .set({ finishedAt: new Date(), papersAdded: added })
       .where(sql`${refreshLog.id} = ${logRow.id}`);
 
-    return NextResponse.json({ ok: true, added });
+    return NextResponse.json({
+      ok: true,
+      added,
+      summarised,
+      aiUsed: aiAvailable,
+    });
   } catch (e) {
     const msg = e instanceof Error ? e.message : "Refresh failed";
     await db

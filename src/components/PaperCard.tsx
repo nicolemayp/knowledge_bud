@@ -2,11 +2,13 @@
 
 import { useEffect, useState } from "react";
 import { SourceBadge, EvidenceBadge } from "./SourceBadge";
+import { Glossarized } from "./GlossaryTooltip";
 
 export type PaperLike = {
   id: string;
   title: string;
   bluf: string;
+  clinicalImplications?: string | null;
   abstract?: string | null;
   authors: string[];
   journal?: string | null;
@@ -28,23 +30,48 @@ const jargonLabel: Record<string, string> = {
   heavy: "Heavy jargon",
 };
 
+const isSampleId = (id: string) => id.startsWith("sample-");
+
 export function PaperCard({ paper }: { paper: PaperLike }) {
   const [expanded, setExpanded] = useState(false);
   const [saved, setSaved] = useState(false);
   const [savingErr, setSavingErr] = useState<string | null>(null);
   const [speaking, setSpeaking] = useState(false);
+  const [notesOpen, setNotesOpen] = useState(false);
+  const [note, setNote] = useState("");
+  const [noteSaving, setNoteSaving] = useState(false);
+  const [noteSavedAt, setNoteSavedAt] = useState<number | null>(null);
 
-  // Stop TTS when card unmounts
   useEffect(() => {
     return () => {
       if (typeof window !== "undefined") window.speechSynthesis?.cancel();
     };
   }, []);
 
+  // Load existing note (skip for sample papers)
+  useEffect(() => {
+    if (!notesOpen || isSampleId(paper.id)) return;
+    let cancelled = false;
+    fetch(`/api/notes?paperId=${encodeURIComponent(paper.id)}`)
+      .then((r) => r.json())
+      .then((data) => {
+        if (!cancelled && data.note) setNote(data.note);
+      })
+      .catch(() => {});
+    return () => {
+      cancelled = true;
+    };
+  }, [notesOpen, paper.id]);
+
   async function toggleSave() {
     setSavingErr(null);
+    if (isSampleId(paper.id)) {
+      // Sample papers don't exist in DB — just toggle locally
+      setSaved((v) => !v);
+      return;
+    }
     const next = !saved;
-    setSaved(next); // optimistic
+    setSaved(next);
     try {
       const res = await fetch("/api/bookmarks", {
         method: next ? "POST" : "DELETE",
@@ -54,12 +81,32 @@ export function PaperCard({ paper }: { paper: PaperLike }) {
       if (!res.ok) {
         const data = await res.json().catch(() => ({}));
         if (data.error) setSavingErr(data.error);
-        // revert
         setSaved(!next);
       }
     } catch {
       setSaved(!next);
       setSavingErr("Network error");
+    }
+  }
+
+  async function saveNote() {
+    if (isSampleId(paper.id)) {
+      setSavingErr("Notes save once papers are pulled from a real source.");
+      return;
+    }
+    setNoteSaving(true);
+    setSavingErr(null);
+    try {
+      const res = await fetch("/api/notes", {
+        method: "PUT",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ paperId: paper.id, body: note }),
+      });
+      if (res.ok) setNoteSavedAt(Date.now());
+    } catch {
+      setSavingErr("Couldn't save note");
+    } finally {
+      setNoteSaving(false);
     }
   }
 
@@ -75,7 +122,13 @@ export function PaperCard({ paper }: { paper: PaperLike }) {
       setSpeaking(false);
       return;
     }
-    const text = `${paper.bluf}. ${paper.abstract ?? ""}`;
+    const text = [
+      paper.bluf,
+      paper.clinicalImplications ? `Clinical implications: ${paper.clinicalImplications}` : "",
+      paper.abstract ?? "",
+    ]
+      .filter(Boolean)
+      .join(". ");
     const utt = new SpeechSynthesisUtterance(text);
     utt.rate = 1.05;
     utt.pitch = 1.0;
@@ -96,7 +149,7 @@ export function PaperCard({ paper }: { paper: PaperLike }) {
             {paper.year}
           </span>
         )}
-        {paper.readingMinutes && (
+        {paper.readingMinutes != null && (
           <span className="chip bg-babyblue-50 text-babyblue-600 border border-babyblue-200">
             ⏱ {paper.readingMinutes} min
           </span>
@@ -110,7 +163,7 @@ export function PaperCard({ paper }: { paper: PaperLike }) {
 
       {/* BLUF */}
       <p className="font-display font-bold text-lg sm:text-xl leading-snug text-ink mb-2">
-        {paper.bluf}
+        <Glossarized text={paper.bluf} />
       </p>
       {paper.isAiSummarized && (
         <p className="text-[11px] uppercase tracking-wide font-bold text-lavender-500 mb-2 flex items-center gap-1">
@@ -120,6 +173,21 @@ export function PaperCard({ paper }: { paper: PaperLike }) {
 
       {/* Title (smaller) */}
       <p className="text-sm font-semibold text-ink-soft mb-3">{paper.title}</p>
+
+      {/* Clinical implications block */}
+      {paper.clinicalImplications && (
+        <div className="rounded-2xl bg-gradient-to-br from-pink-50 to-lavender-50 border border-pink-200 px-4 py-3 mb-4">
+          <p className="text-[10px] uppercase tracking-wider font-bold text-pink-700 mb-1 flex items-center gap-1">
+            <span>💡</span> Implications for clinical practice
+            {paper.isAiSummarized && (
+              <span className="text-lavender-500 ml-1">· AI-assisted</span>
+            )}
+          </p>
+          <p className="text-sm text-ink leading-relaxed">
+            <Glossarized text={paper.clinicalImplications} />
+          </p>
+        </div>
+      )}
 
       {/* Key stats row */}
       {paper.keyStats && paper.keyStats.length > 0 && (
@@ -172,7 +240,7 @@ export function PaperCard({ paper }: { paper: PaperLike }) {
       )}
       {expanded && paper.abstract && (
         <p className="mt-3 text-sm text-ink-soft leading-relaxed whitespace-pre-line">
-          {paper.abstract}
+          <Glossarized text={paper.abstract} />
         </p>
       )}
 
@@ -208,7 +276,47 @@ export function PaperCard({ paper }: { paper: PaperLike }) {
         >
           {speaking ? "⏹ Stop" : "🎧 Listen"}
         </button>
+        <button
+          onClick={() => setNotesOpen((v) => !v)}
+          className={`inline-flex items-center gap-1.5 rounded-full border-2 font-display font-semibold text-sm px-4 py-2 transition-all ${
+            notesOpen
+              ? "bg-babyblue-100 border-babyblue-300 text-babyblue-700"
+              : "border-babyblue-200 hover:border-babyblue-300 text-babyblue-600"
+          }`}
+          aria-label={notesOpen ? "Hide notes" : "Add note"}
+        >
+          📝 {notesOpen ? "Hide note" : "Note"}
+        </button>
       </div>
+
+      {/* Notes */}
+      {notesOpen && (
+        <div className="mt-4 rounded-2xl bg-cream border border-babyblue-100 p-3">
+          <textarea
+            value={note}
+            onChange={(e) => setNote(e.target.value)}
+            placeholder="Your private notes — observations, applications for clients, follow-up reading…"
+            rows={3}
+            className="w-full rounded-xl bg-white/80 border border-babyblue-100 focus:border-babyblue-300 outline-none px-3 py-2 text-sm leading-relaxed resize-y"
+          />
+          <div className="flex items-center justify-between mt-2">
+            <span className="text-[10px] text-ink-mute">
+              {isSampleId(paper.id)
+                ? "Notes save once papers are pulled from a real source."
+                : noteSavedAt
+                ? `✓ saved ${new Date(noteSavedAt).toLocaleTimeString()}`
+                : "Private to your account."}
+            </span>
+            <button
+              onClick={saveNote}
+              disabled={noteSaving || isSampleId(paper.id)}
+              className="rounded-full bg-gradient-to-r from-babyblue-400 to-lavender-400 hover:from-babyblue-500 hover:to-lavender-500 text-white font-display font-bold text-xs px-3 py-1.5 disabled:opacity-50 transition-all"
+            >
+              {noteSaving ? "Saving…" : "Save note"}
+            </button>
+          </div>
+        </div>
+      )}
 
       {savingErr && (
         <p className="mt-2 text-xs text-pink-600 font-semibold">{savingErr}</p>

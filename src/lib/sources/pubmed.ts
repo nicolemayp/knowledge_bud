@@ -12,20 +12,10 @@
  *   - 10 req/s with a free key (set PUBMED_API_KEY)
  */
 
+import type { SourceRecord } from "./types";
+
 const ESEARCH = "https://eutils.ncbi.nlm.nih.gov/entrez/eutils/esearch.fcgi";
 const EFETCH = "https://eutils.ncbi.nlm.nih.gov/entrez/eutils/efetch.fcgi";
-
-export type PubMedRecord = {
-  pmid: string;
-  doi?: string;
-  title: string;
-  abstract?: string;
-  authors: string[];
-  journal?: string;
-  year?: number;
-  publishedAt?: Date;
-  url: string;
-};
 
 function paramsWithKey(extra: Record<string, string>): URLSearchParams {
   const p = new URLSearchParams({
@@ -38,16 +28,12 @@ function paramsWithKey(extra: Record<string, string>): URLSearchParams {
   return p;
 }
 
-/**
- * Search PubMed for new papers in a topic.
- * Returns up to `retmax` PMIDs, newest first.
- */
-export async function searchPubMed(
+async function searchPubMedIds(
   query: string,
   opts: { sinceDays?: number; retmax?: number } = {}
 ): Promise<string[]> {
-  const sinceDays = opts.sinceDays ?? 30;
-  const retmax = opts.retmax ?? 25;
+  const sinceDays = opts.sinceDays ?? 35;
+  const retmax = opts.retmax ?? 10;
 
   const term = `${query} AND ("last ${sinceDays} days"[PDat])`;
   const params = paramsWithKey({
@@ -65,14 +51,7 @@ export async function searchPubMed(
   return data.esearchresult?.idlist ?? [];
 }
 
-/**
- * Fetch metadata for a list of PMIDs.
- * EFetch returns XML; we parse the small subset we need with regex.
- * (Avoids pulling in a heavy XML dependency for ~6 fields.)
- */
-export async function fetchPubMedRecords(
-  pmids: string[]
-): Promise<PubMedRecord[]> {
+async function fetchPubMedXml(pmids: string[]): Promise<SourceRecord[]> {
   if (pmids.length === 0) return [];
   const params = paramsWithKey({
     id: pmids.join(","),
@@ -84,9 +63,23 @@ export async function fetchPubMedRecords(
   return parsePubMedXml(xml);
 }
 
+export async function searchPubMed(
+  query: string,
+  opts: { sinceDays?: number; max?: number } = {}
+): Promise<SourceRecord[]> {
+  const ids = await searchPubMedIds(query, {
+    sinceDays: opts.sinceDays,
+    retmax: opts.max,
+  });
+  return fetchPubMedXml(ids);
+}
+
+// Back-compat exports for existing call sites.
+export { searchPubMedIds as searchPubMedIdsLegacy, fetchPubMedXml as fetchPubMedRecords };
+
 // ─── XML PARSING ────────────────────────────────────────────────────
-function parsePubMedXml(xml: string): PubMedRecord[] {
-  const out: PubMedRecord[] = [];
+function parsePubMedXml(xml: string): SourceRecord[] {
+  const out: SourceRecord[] = [];
   const articleBlocks = xml.split(/<PubmedArticle>/).slice(1);
   for (const block of articleBlocks) {
     const pmid = grab(block, /<PMID[^>]*>(\d+)<\/PMID>/);
@@ -119,13 +112,13 @@ function parsePubMedXml(xml: string): PubMedRecord[] {
     }
 
     out.push({
-      pmid,
-      doi: doi ?? undefined,
+      externalId: pmid,
+      doi: doi ?? null,
       title,
-      abstract: abstract ?? undefined,
+      abstract: abstract ?? null,
       authors,
-      journal: journal ?? undefined,
-      year,
+      journal: journal ?? null,
+      year: year ?? null,
       url: `https://pubmed.ncbi.nlm.nih.gov/${pmid}/`,
     });
   }
@@ -151,7 +144,7 @@ function decode(s?: string): string | undefined {
     .replace(/&gt;/g, ">")
     .replace(/&quot;/g, '"')
     .replace(/&#39;/g, "'")
-    .replace(/<[^>]+>/g, "") // strip residual XML tags inside text
+    .replace(/<[^>]+>/g, "")
     .replace(/\s+/g, " ")
     .trim();
 }

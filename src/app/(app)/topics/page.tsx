@@ -1,28 +1,21 @@
 "use client";
 
-import { useState } from "react";
-
-const DEFAULT_TOPICS = [
-  { id: "cbt", label: "CBT", emoji: "🧠" },
-  { id: "dbt", label: "DBT", emoji: "🌊" },
-  { id: "trauma", label: "Trauma", emoji: "💗" },
-  { id: "ptsd", label: "PTSD", emoji: "🛡️" },
-  { id: "depression", label: "Depression", emoji: "🌧️" },
-  { id: "anxiety", label: "Anxiety", emoji: "🌀" },
-  { id: "mindfulness", label: "Mindfulness", emoji: "🧘" },
-  { id: "adolescent", label: "Child & adolescent", emoji: "🌱" },
-  { id: "neuroscience", label: "Neuroscience", emoji: "🧬" },
-  { id: "psychopharm", label: "Psychopharmacology", emoji: "💊" },
-  { id: "addiction", label: "Addiction", emoji: "🔓" },
-  { id: "family", label: "Family systems", emoji: "🏠" },
-];
+import { useState, useMemo } from "react";
+import { TOPICS, TOPIC_GROUPS } from "@/lib/topics";
 
 export default function TopicsPage() {
   const [enabled, setEnabled] = useState<Record<string, boolean>>(
-    Object.fromEntries(DEFAULT_TOPICS.map((t) => [t.id, true]))
+    Object.fromEntries(TOPICS.map((t) => [t.id, false]))
   );
   const [custom, setCustom] = useState<string[]>([]);
   const [draft, setDraft] = useState("");
+
+  const grouped = useMemo(() => {
+    return TOPIC_GROUPS.map((g) => ({
+      ...g,
+      topics: TOPICS.filter((t) => t.group === g.id),
+    }));
+  }, []);
 
   function addCustom(e: React.FormEvent) {
     e.preventDefault();
@@ -32,58 +25,80 @@ export default function TopicsPage() {
     setCustom([...custom, t]);
     setDraft("");
   }
-
   function removeCustom(t: string) {
     setCustom(custom.filter((x) => x !== t));
   }
 
+  const enabledCount = Object.values(enabled).filter(Boolean).length;
+
   return (
-    <div className="space-y-6">
+    <div className="space-y-6 pb-2">
       <header>
-        <h1 className="font-display text-2xl font-bold text-ink">Your topics 🌷</h1>
+        <h1 className="font-display text-2xl font-bold text-ink">
+          Your topics 🌷
+        </h1>
         <p className="text-sm text-ink-soft">
-          Toggle topics on/off. Add your own — Knowledge Bud will pull new
-          research matching them every month.
+          Pick what to follow. Each refresh pulls new research matching your
+          enabled topics. Add anything specific in <em>Custom topics</em>.
+        </p>
+        <p className="text-[11px] text-ink-mute mt-1">
+          {enabledCount} default topic{enabledCount === 1 ? "" : "s"} on ·{" "}
+          {custom.length} custom
         </p>
       </header>
 
-      <section className="rounded-3xl bg-white/85 border border-pink-100 shadow-soft p-5">
-        <h2 className="font-display font-bold text-lg mb-3">Default topics</h2>
-        <div className="grid grid-cols-2 gap-2">
-          {DEFAULT_TOPICS.map((t) => {
-            const on = enabled[t.id];
-            return (
-              <button
-                key={t.id}
-                onClick={() => setEnabled({ ...enabled, [t.id]: !on })}
-                className={`flex items-center gap-2 rounded-2xl border-2 px-3 py-2.5 text-left text-sm font-display font-semibold transition-all ${
-                  on
-                    ? "bg-gradient-to-r from-pink-50 to-lavender-50 border-pink-300 text-ink"
-                    : "bg-white border-pink-100 text-ink-mute hover:border-pink-200"
-                }`}
-              >
-                <span className="text-xl">{t.emoji}</span>
-                <span className="flex-1">{t.label}</span>
-                <span
-                  className={`w-3 h-3 rounded-full ${
-                    on ? "bg-pink-400" : "bg-pink-100"
+      {grouped.map((g) => (
+        <section
+          key={g.id}
+          className="rounded-3xl bg-white/85 border border-pink-100 shadow-soft p-5"
+        >
+          <h2 className="font-display font-bold text-lg mb-3">
+            <span className="mr-2 text-xl" aria-hidden="true">
+              {g.emoji}
+            </span>
+            {g.label}
+            <span className="text-xs text-ink-mute ml-2 font-normal">
+              ({g.topics.length})
+            </span>
+          </h2>
+          <div className="grid grid-cols-2 gap-2">
+            {g.topics.map((t) => {
+              const on = enabled[t.id];
+              return (
+                <button
+                  key={t.id}
+                  onClick={() => setEnabled({ ...enabled, [t.id]: !on })}
+                  className={`flex items-center gap-2 rounded-2xl border-2 px-3 py-2.5 text-left text-sm font-display font-semibold transition-all ${
+                    on
+                      ? "bg-gradient-to-r from-pink-50 to-lavender-50 border-pink-300 text-ink"
+                      : "bg-white border-pink-100 text-ink-mute hover:border-pink-200"
                   }`}
-                  aria-hidden="true"
-                />
-              </button>
-            );
-          })}
-        </div>
-      </section>
+                >
+                  <span className="text-xl">{t.emoji}</span>
+                  <span className="flex-1">{t.label}</span>
+                  <span
+                    className={`w-3 h-3 rounded-full ${
+                      on ? "bg-pink-400" : "bg-pink-100"
+                    }`}
+                    aria-hidden="true"
+                  />
+                </button>
+              );
+            })}
+          </div>
+        </section>
+      ))}
 
       <section className="rounded-3xl bg-white/85 border border-pink-100 shadow-soft p-5">
-        <h2 className="font-display font-bold text-lg mb-3">Custom topics</h2>
+        <h2 className="font-display font-bold text-lg mb-3">
+          <span className="mr-2" aria-hidden="true">✨</span>Custom topics
+        </h2>
         <form onSubmit={addCustom} className="flex gap-2 mb-3">
           <input
             type="text"
             value={draft}
             onChange={(e) => setDraft(e.target.value)}
-            placeholder="e.g. EMDR, polyvagal, ACEs"
+            placeholder="e.g. EMDR for first responders, attachment in adoption"
             className="flex-1 rounded-2xl bg-cream border-2 border-lavender-100 focus:border-lavender-300 outline-none px-4 py-2.5 text-sm font-medium placeholder:text-ink-mute"
           />
           <button
@@ -121,8 +136,8 @@ export default function TopicsPage() {
       </section>
 
       <p className="text-xs text-ink-mute text-center px-4">
-        Once Neon is connected, your topic preferences will save to the cloud
-        DB so they persist across this device&rsquo;s browsers.
+        Topic preferences will save to your Neon-backed account in the next
+        iteration so they sync across devices.
       </p>
     </div>
   );

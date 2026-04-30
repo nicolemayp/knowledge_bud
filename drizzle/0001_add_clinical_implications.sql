@@ -1,0 +1,1 @@
+ALTER TABLE "papers" ADD COLUMN "clinical_implications" text;
