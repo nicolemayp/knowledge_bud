@@ -28,22 +28,22 @@ const SOURCE_LABEL: Record<string, string> = {
   crossref: "Crossref",
 };
 
-// All sources we have live fetchers for.
-const SOURCES = ["pubmed", "openalex", "europepmc", "medrxiv"] as const;
+// PubMed-only for cron (other sources need different query syntax — TODO).
+// PubMed E-utilities allows 3 req/s without API key, 10 req/s with.
+const SOURCES = ["pubmed"] as const;
 
-// On cron, hit the broader "monthly" topic set (vs Quick on manual refresh).
+// Smaller curated topic set so we fit Groq's TPM rate limits comfortably.
+// (Groq llama-3.3-70b: ~30 RPM, ~12k TPM on free tier.)
 const CRON_TOPICS = [
   "cbt", "dbt", "act", "emdr", "ifs", "somatic", "polyvagal",
-  "music", "art", "play", "mi", "cft", "mbsr",
-  "attention", "neuroplasticity", "default-mode", "stress", "sleep",
-  "interoception", "habit", "psychedelics", "psychopharm",
-  "alliance", "burnout", "trauma-informed", "self-compassion", "attachment",
+  "mbsr", "mi", "cft",
+  "music", "art", "play",
+  "attention", "neuroplasticity", "sleep", "stress", "attachment",
+  "alliance", "burnout", "trauma-informed",
   "trauma", "ptsd", "complex-ptsd", "depression", "anxiety", "ocd",
-  "bipolar", "bpd", "adhd", "autism", "eating", "addiction",
-  "suicide", "grief",
-  "adolescent", "child", "family", "couples", "perinatal",
-  "veterans", "first-responders", "neurodiversity",
-  "loneliness", "exercise",
+  "bpd", "adhd", "eating", "addiction", "suicide", "grief",
+  "adolescent", "perinatal", "couples", "older-adults",
+  "psychedelics",
 ];
 
 export const maxDuration = 300; // 5 min — Vercel max for hobby plan
@@ -97,17 +97,26 @@ export async function GET(req: Request) {
           let clinicalImplications: string | null = null;
           let blufIsAi = false;
           if (aiAvailable && r.abstract && r.abstract.length > 200) {
+            // Pace ~3s/call to stay under Groq's TPM cap on free tier.
             const ai = await summarisePaper({
               title: r.title,
               abstract: r.abstract,
             });
-            if (ai && "skip" in ai) continue;
+            if (ai && "skip" in ai) {
+              // AI judged non-clinical — pace then skip
+              await new Promise((r) => setTimeout(r, 3000));
+              continue;
+            }
             if (ai && "bluf" in ai) {
               bluf = ai.bluf;
               clinicalImplications = ai.clinicalImplications;
               blufIsAi = true;
             }
+            await new Promise((r) => setTimeout(r, 3000));
           }
+          // If we don't have AI-generated implications, skip this paper —
+          // we'd rather have fewer rich papers than many empty ones.
+          if (!clinicalImplications) continue;
           const { readingMinutes, jargon } = computeReading(r.abstract);
           const result = await db
             .insert(papers)
@@ -135,7 +144,8 @@ export async function GET(req: Request) {
             .returning({ id: papers.id });
           if (result.length > 0) summary[slug].added++;
         }
-        await new Promise((r) => setTimeout(r, 200));
+        // Bigger pause between topics so PubMed doesn't 429 us.
+        await new Promise((r) => setTimeout(r, 800));
       }
 
       await db
