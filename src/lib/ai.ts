@@ -72,7 +72,6 @@ export async function summarisePaper(args: {
       return null;
     }
     if (parsed.is_clinical === false) {
-      // Caller should skip insertion of non-clinical papers.
       return { skip: true } as const;
     }
     if (
@@ -84,9 +83,11 @@ export async function summarisePaper(args: {
         clinicalImplications: parsed.clinical_implications.trim(),
       };
     }
+    console.warn("[ai.summarisePaper] missing fields in response:", JSON.stringify(parsed).slice(0, 200));
     return null;
   } catch (e) {
-    console.error("[ai.summarisePaper] failed:", e);
+    const err = e as { status?: number; message?: string };
+    console.error("[ai.summarisePaper] failed:", err.status, err.message?.slice(0, 200));
     return null;
   }
 }

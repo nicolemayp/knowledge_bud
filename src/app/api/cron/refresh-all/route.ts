@@ -97,14 +97,12 @@ export async function GET(req: Request) {
           let clinicalImplications: string | null = null;
           let blufIsAi = false;
           if (aiAvailable && r.abstract && r.abstract.length > 200) {
-            // Pace ~3s/call to stay under Groq's TPM cap on free tier.
             const ai = await summarisePaper({
               title: r.title,
               abstract: r.abstract,
             });
             if (ai && "skip" in ai) {
-              // AI judged non-clinical — pace then skip
-              await new Promise((r) => setTimeout(r, 3000));
+              await new Promise((r) => setTimeout(r, 2500));
               continue;
             }
             if (ai && "bluf" in ai) {
@@ -112,11 +110,8 @@ export async function GET(req: Request) {
               clinicalImplications = ai.clinicalImplications;
               blufIsAi = true;
             }
-            await new Promise((r) => setTimeout(r, 3000));
+            await new Promise((r) => setTimeout(r, 2500));
           }
-          // If we don't have AI-generated implications, skip this paper —
-          // we'd rather have fewer rich papers than many empty ones.
-          if (!clinicalImplications) continue;
           const { readingMinutes, jargon } = computeReading(r.abstract);
           const result = await db
             .insert(papers)
