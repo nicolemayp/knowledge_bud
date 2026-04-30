@@ -2,9 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { SOURCES, formatLimit } from "@/lib/sources";
-import { EmailSubscribe } from "@/components/EmailSubscribe";
-import { PushSubscribe } from "@/components/PushSubscribe";
-import { PodcastPlayer } from "@/components/PodcastPlayer";
+import Link from "next/link";
 
 type SourceState = {
   slug: string;
@@ -106,19 +104,18 @@ export default function SettingsPage() {
         </div>
       </section>
 
-      <section className="rounded-3xl bg-white/85 border border-pink-100 shadow-soft p-5">
-        <h2 className="font-display font-bold text-lg mb-2">📧 Monthly email digest</h2>
-        <EmailSubscribe />
-      </section>
-
-      <section className="rounded-3xl bg-white/85 border border-pink-100 shadow-soft p-5">
-        <h2 className="font-display font-bold text-lg mb-2">🔔 Push notifications</h2>
-        <PushSubscribe />
-      </section>
-
-      <section className="rounded-3xl bg-white/85 border border-pink-100 shadow-soft p-5">
-        <h2 className="font-display font-bold text-lg mb-2">🎙️ Monthly podcast</h2>
-        <PodcastPlayer />
+      <section className="rounded-3xl bg-gradient-to-br from-pink-100 via-lavender-100 to-babyblue-100 border border-pink-200 shadow-soft p-5">
+        <h2 className="font-display font-bold text-lg mb-2">🎙️ Listen & subscribe</h2>
+        <p className="text-sm text-ink-soft mb-3">
+          The monthly podcast, email digest, and push notifications all
+          live in their own tab now — easier to find.
+        </p>
+        <Link
+          href="/listen"
+          className="inline-block rounded-2xl bg-gradient-to-r from-pink-400 to-lavender-400 hover:from-pink-500 hover:to-lavender-500 text-white font-display font-bold text-sm px-4 py-2 shadow-soft"
+        >
+          Open Listen tab →
+        </Link>
       </section>
 
       <section className="rounded-3xl bg-white/85 border border-pink-100 shadow-soft p-5">

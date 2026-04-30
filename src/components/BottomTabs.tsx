@@ -8,6 +8,7 @@ type Tab = { href: string; label: string; emoji: string };
 const TABS: Tab[] = [
   { href: "/feed", label: "Feed", emoji: "📰" },
   { href: "/saved", label: "Saved", emoji: "🔖" },
+  { href: "/listen", label: "Listen", emoji: "🎙️" },
   { href: "/topics", label: "Topics", emoji: "🌷" },
   { href: "/guide", label: "Guide", emoji: "📖" },
   { href: "/settings", label: "Settings", emoji: "⚙️" },
@@ -20,7 +21,7 @@ export function BottomTabs() {
       aria-label="Main"
       className="fixed bottom-0 inset-x-0 z-30 border-t hairline bg-white/85 backdrop-blur-xl pb-[env(safe-area-inset-bottom)]"
     >
-      <ul className="mx-auto max-w-2xl grid grid-cols-5">
+      <ul className="mx-auto max-w-2xl grid grid-cols-6">
         {TABS.map((t) => {
           const active = pathname === t.href || pathname.startsWith(t.href + "/");
           return (
@@ -32,7 +33,7 @@ export function BottomTabs() {
                 }`}
               >
                 <span
-                  className={`text-2xl transition-transform ${
+                  className={`text-xl sm:text-2xl transition-transform ${
                     active ? "scale-110" : ""
                   }`}
                   aria-hidden="true"
@@ -40,9 +41,7 @@ export function BottomTabs() {
                   {t.emoji}
                 </span>
                 <span
-                  className={`text-[11px] font-display font-semibold ${
-                    active ? "" : ""
-                  }`}
+                  className="text-[10px] sm:text-[11px] font-display font-semibold whitespace-nowrap"
                 >
                   {t.label}
                 </span>

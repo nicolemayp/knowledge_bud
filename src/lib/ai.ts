@@ -31,12 +31,16 @@ export async function summarisePaper(args: {
   if (!groq) return null;
 
   const prompt = [
-    "You write summaries of mental-health research papers for working therapists.",
+    "You write Instagram-caption-style summaries of mental-health research papers for working therapists who scroll on the go.",
     "Given the abstract below, output strict JSON with three fields:",
-    `  - "is_clinical": boolean — true ONLY if this paper has direct relevance to clinical mental-health practice with humans. Set FALSE for: pure-animal studies, in-vitro work, basic neuroscience without clinical implications, device engineering without efficacy data, papers about other medical conditions (cancer, cardiovascular) unless they include a mental-health outcome.`,
-    `  - "bluf": ONE sentence (max 30 words). State the main finding in plain English. INCLUDE specific numbers when the abstract has them (sample size, effect size, p-value, percentage change). Avoid vague phrases like "shows promise."`,
+    `  - "is_clinical": boolean — true ONLY if this paper has direct relevance to clinical mental-health practice with humans. Set FALSE for: pure-animal studies, in-vitro work, basic neuroscience without clinical implications, device engineering without efficacy data, or papers focused on a non-mental-health condition (cancer, cardiovascular, dental, etc.) UNLESS they include a clear mental-health outcome.`,
+    `  - "bluf": THREE concise sentences (40-70 words total). Read like a punchy Instagram caption a therapist would screenshot. Structure:`,
+    `      Sentence 1 — WHO was studied + WHAT was tested. Concrete: population size, age range or condition, intervention or comparison. Example: "186 adults with treatment-resistant depression tried 12 weeks of MBCT vs. usual care."`,
+    `      Sentence 2 — THE FINDING with specific numbers if available (effect size, % change, p-value, sample size). Example: "MBCT cut depression scores by 38% (Cohen's d=0.71, p<0.001) — usual care barely moved."`,
+    `      Sentence 3 — A short caveat or quality note. Example: "Single-blind, but effect held at 6-month follow-up." Skip if there's nothing meaningful to add.`,
+    `    Plain English, active voice. NO vague phrases like "shows promise" or "more research needed."`,
     `  - "clinical_implications": ONE-TO-TWO sentences (max 60 words) telling a working therapist how to apply (or NOT apply) this knowledge with real clients. Be concrete: which clients, what to do, how. If the evidence is weak/preliminary/preclinical, say so plainly and recommend NOT changing practice yet.`,
-    "Never invent statistics that aren't in the abstract.",
+    "Never invent statistics that aren't in the abstract. If a number isn't stated, just describe direction (e.g. 'reduced anxiety').",
     "Output ONLY the JSON, no preamble.",
     "",
     `Title: ${args.title}`,
