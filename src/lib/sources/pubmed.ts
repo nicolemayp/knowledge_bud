@@ -139,11 +139,20 @@ function collect(s: string, re: RegExp): string[] {
 function decode(s?: string): string | undefined {
   if (!s) return undefined;
   return s
+    // Numeric character refs: &#x3b1; → α, &#945; → α
+    .replace(/&#x([0-9a-fA-F]+);/g, (_, hex) =>
+      String.fromCodePoint(parseInt(hex, 16))
+    )
+    .replace(/&#(\d+);/g, (_, dec) => String.fromCodePoint(parseInt(dec, 10)))
+    // Common named entities
     .replace(/&amp;/g, "&")
     .replace(/&lt;/g, "<")
     .replace(/&gt;/g, ">")
     .replace(/&quot;/g, '"')
+    .replace(/&apos;/g, "'")
     .replace(/&#39;/g, "'")
+    .replace(/&nbsp;/g, " ")
+    // Strip residual XML tags inside text
     .replace(/<[^>]+>/g, "")
     .replace(/\s+/g, " ")
     .trim();
