@@ -1,65 +1,73 @@
-import Image from "next/image";
+"use client";
 
-export default function Home() {
+import Link from "next/link";
+import { useRouter } from "next/navigation";
+import { useState } from "react";
+import { Logo } from "@/components/Logo";
+
+export default function LoginPage() {
+  const router = useRouter();
+  const [loading, setLoading] = useState(false);
+  const [err, setErr] = useState<string | null>(null);
+
+  async function continueAsGuest() {
+    setLoading(true);
+    setErr(null);
+    try {
+      const res = await fetch("/api/guest", { method: "POST" });
+      if (!res.ok) throw new Error("Could not start guest session");
+      router.push("/feed");
+    } catch (e) {
+      setErr(e instanceof Error ? e.message : "Something went wrong");
+      setLoading(false);
+    }
+  }
+
   return (
-    <div className="flex flex-col flex-1 items-center justify-center bg-zinc-50 font-sans dark:bg-black">
-      <main className="flex flex-1 w-full max-w-3xl flex-col items-center justify-between py-32 px-16 bg-white dark:bg-black sm:items-start">
-        <Image
-          className="dark:invert"
-          src="/next.svg"
-          alt="Next.js logo"
-          width={100}
-          height={20}
-          priority
-        />
-        <div className="flex flex-col items-center gap-6 text-center sm:items-start sm:text-left">
-          <h1 className="max-w-xs text-3xl font-semibold leading-10 tracking-tight text-black dark:text-zinc-50">
-            To get started, edit the page.tsx file.
-          </h1>
-          <p className="max-w-md text-lg leading-8 text-zinc-600 dark:text-zinc-400">
-            Looking for a starting point or more instructions? Head over to{" "}
-            <a
-              href="https://vercel.com/templates?framework=next.js&utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-              className="font-medium text-zinc-950 dark:text-zinc-50"
-            >
-              Templates
-            </a>{" "}
-            or the{" "}
-            <a
-              href="https://nextjs.org/learn?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-              className="font-medium text-zinc-950 dark:text-zinc-50"
-            >
-              Learning
-            </a>{" "}
-            center.
-          </p>
+    <main className="flex flex-1 items-center justify-center px-5 py-10">
+      <section className="w-full max-w-md">
+        <div className="flex justify-center mb-8">
+          <Logo size="lg" />
         </div>
-        <div className="flex flex-col gap-4 text-base font-medium sm:flex-row">
-          <a
-            className="flex h-12 w-full items-center justify-center gap-2 rounded-full bg-foreground px-5 text-background transition-colors hover:bg-[#383838] dark:hover:bg-[#ccc] md:w-[158px]"
-            href="https://vercel.com/new?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-            target="_blank"
-            rel="noopener noreferrer"
+
+        <p className="text-center text-ink-soft text-base font-medium mb-10 px-4">
+          Stay current on new mental health research — vetted, summarized, and
+          delivered the first of every month. 🌷
+        </p>
+
+        <div className="rounded-3xl bg-white/70 backdrop-blur-sm border border-pink-100 shadow-soft p-6 space-y-3">
+          <button
+            onClick={continueAsGuest}
+            disabled={loading}
+            className="w-full rounded-2xl bg-gradient-to-r from-pink-400 via-lavender-400 to-babyblue-400 hover:from-pink-500 hover:to-babyblue-500 transition-all text-white font-display font-bold text-lg py-4 shadow-soft hover:shadow-pop active:scale-[0.98] disabled:opacity-60 disabled:cursor-wait"
           >
-            <Image
-              className="dark:invert"
-              src="/vercel.svg"
-              alt="Vercel logomark"
-              width={16}
-              height={16}
-            />
-            Deploy Now
-          </a>
-          <a
-            className="flex h-12 w-full items-center justify-center rounded-full border border-solid border-black/[.08] px-5 transition-colors hover:border-transparent hover:bg-black/[.04] dark:border-white/[.145] dark:hover:bg-[#1a1a1a] md:w-[158px]"
-            href="https://nextjs.org/docs?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-            target="_blank"
-            rel="noopener noreferrer"
+            {loading ? "Setting up..." : "✨ Continue as Guest"}
+          </button>
+
+          {err && (
+            <p className="text-sm text-pink-600 text-center font-semibold">{err}</p>
+          )}
+
+          <Link
+            href="/signin"
+            className="block w-full rounded-2xl bg-white border-2 border-lavender-200 hover:border-lavender-300 text-lavender-600 hover:text-lavender-700 font-display font-semibold text-base py-3 text-center transition-all"
           >
-            Documentation
-          </a>
+            Sign in with email
+          </Link>
+
+          <Link
+            href="/signup"
+            className="block w-full text-center text-sm font-semibold text-ink-mute hover:text-pink-500 py-2 transition-colors"
+          >
+            New here? Create an account →
+          </Link>
         </div>
-      </main>
-    </div>
+
+        <p className="mt-6 text-center text-xs text-ink-mute leading-relaxed px-4">
+          Guest mode saves your topics & bookmarks securely in our cloud DB —
+          tied to this browser. Sign up later to access them on any device.
+        </p>
+      </section>
+    </main>
   );
 }
