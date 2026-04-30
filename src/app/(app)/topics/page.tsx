@@ -1,32 +1,94 @@
 "use client";
 
-import { useState, useMemo } from "react";
+import { useEffect, useState, useMemo } from "react";
 import { TOPICS, TOPIC_GROUPS } from "@/lib/topics";
 
-export default function TopicsPage() {
-  const [enabled, setEnabled] = useState<Record<string, boolean>>(
-    Object.fromEntries(TOPICS.map((t) => [t.id, false]))
-  );
-  const [custom, setCustom] = useState<string[]>([]);
-  const [draft, setDraft] = useState("");
+type DbTopic = {
+  key: string;
+  label: string;
+  kind: "default" | "custom";
+  enabled: boolean;
+};
 
-  const grouped = useMemo(() => {
-    return TOPIC_GROUPS.map((g) => ({
-      ...g,
-      topics: TOPICS.filter((t) => t.group === g.id),
-    }));
+export default function TopicsPage() {
+  const [enabled, setEnabled] = useState<Record<string, boolean>>({});
+  const [custom, setCustom] = useState<{ key: string; label: string }[]>([]);
+  const [draft, setDraft] = useState("");
+  const [savingKey, setSavingKey] = useState<string | null>(null);
+  const [loaded, setLoaded] = useState(false);
+
+  // Load existing prefs from DB
+  useEffect(() => {
+    let cancelled = false;
+    fetch("/api/topics")
+      .then((r) => r.json())
+      .then((data) => {
+        if (cancelled) return;
+        const dbMap: Record<string, boolean> = {};
+        const dbCustom: { key: string; label: string }[] = [];
+        (data.topics ?? []).forEach((t: DbTopic) => {
+          if (t.kind === "custom") {
+            if (t.enabled) dbCustom.push({ key: t.key, label: t.label });
+          } else {
+            dbMap[t.key] = t.enabled;
+          }
+        });
+        setEnabled(dbMap);
+        setCustom(dbCustom);
+        setLoaded(true);
+      })
+      .catch(() => setLoaded(true));
+    return () => {
+      cancelled = true;
+    };
   }, []);
 
-  function addCustom(e: React.FormEvent) {
+  const grouped = useMemo(
+    () =>
+      TOPIC_GROUPS.map((g) => ({
+        ...g,
+        topics: TOPICS.filter((t) => t.group === g.id),
+      })),
+    []
+  );
+
+  async function toggleDefault(key: string, label: string) {
+    const next = !enabled[key];
+    setEnabled({ ...enabled, [key]: next });
+    setSavingKey(key);
+    try {
+      await fetch("/api/topics", {
+        method: "PUT",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ key, label, kind: "default", enabled: next }),
+      });
+    } finally {
+      setSavingKey(null);
+    }
+  }
+
+  async function addCustom(e: React.FormEvent) {
     e.preventDefault();
     const t = draft.trim();
     if (!t) return;
-    if (custom.includes(t)) return;
-    setCustom([...custom, t]);
+    const key = `custom:${t.toLowerCase().replace(/\s+/g, "-")}`;
+    if (custom.some((c) => c.key === key)) return;
+    setCustom([...custom, { key, label: t }]);
     setDraft("");
+    await fetch("/api/topics", {
+      method: "PUT",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ key, label: t, kind: "custom", enabled: true }),
+    });
   }
-  function removeCustom(t: string) {
-    setCustom(custom.filter((x) => x !== t));
+
+  async function removeCustom(key: string) {
+    setCustom(custom.filter((c) => c.key !== key));
+    await fetch("/api/topics", {
+      method: "DELETE",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ key }),
+    });
   }
 
   const enabledCount = Object.values(enabled).filter(Boolean).length;
@@ -42,8 +104,11 @@ export default function TopicsPage() {
           enabled topics. Add anything specific in <em>Custom topics</em>.
         </p>
         <p className="text-[11px] text-ink-mute mt-1">
-          {enabledCount} default topic{enabledCount === 1 ? "" : "s"} on ·{" "}
-          {custom.length} custom
+          {!loaded
+            ? "Loading…"
+            : `${enabledCount} default topic${
+                enabledCount === 1 ? "" : "s"
+              } on · ${custom.length} custom · saved to your account`}
         </p>
       </header>
 
@@ -63,16 +128,18 @@ export default function TopicsPage() {
           </h2>
           <div className="grid grid-cols-2 gap-2">
             {g.topics.map((t) => {
-              const on = enabled[t.id];
+              const on = enabled[t.id] ?? false;
+              const saving = savingKey === t.id;
               return (
                 <button
                   key={t.id}
-                  onClick={() => setEnabled({ ...enabled, [t.id]: !on })}
+                  onClick={() => toggleDefault(t.id, t.label)}
+                  disabled={saving}
                   className={`flex items-center gap-2 rounded-2xl border-2 px-3 py-2.5 text-left text-sm font-display font-semibold transition-all ${
                     on
                       ? "bg-gradient-to-r from-pink-50 to-lavender-50 border-pink-300 text-ink"
                       : "bg-white border-pink-100 text-ink-mute hover:border-pink-200"
-                  }`}
+                  } ${saving ? "opacity-50" : ""}`}
                 >
                   <span className="text-xl">{t.emoji}</span>
                   <span className="flex-1">{t.label}</span>
@@ -116,16 +183,16 @@ export default function TopicsPage() {
           </p>
         ) : (
           <div className="flex flex-wrap gap-2">
-            {custom.map((t) => (
+            {custom.map((c) => (
               <span
-                key={t}
+                key={c.key}
                 className="chip bg-lavender-50 text-lavender-700 border border-lavender-200"
               >
-                {t}
+                {c.label}
                 <button
-                  onClick={() => removeCustom(t)}
+                  onClick={() => removeCustom(c.key)}
                   className="ml-1 text-lavender-500 hover:text-pink-500"
-                  aria-label={`Remove ${t}`}
+                  aria-label={`Remove ${c.label}`}
                 >
                   ✕
                 </button>
@@ -134,11 +201,6 @@ export default function TopicsPage() {
           </div>
         )}
       </section>
-
-      <p className="text-xs text-ink-mute text-center px-4">
-        Topic preferences will save to your Neon-backed account in the next
-        iteration so they sync across devices.
-      </p>
     </div>
   );
 }
