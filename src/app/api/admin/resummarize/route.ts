@@ -34,19 +34,20 @@ export async function POST(req: Request) {
   const cap = Math.min(limit ?? 200, 200);
 
   const db = getDb();
-  // Default: only re-summarize papers with missing or short clinical implications
-  // (saves Groq quota — re-running on already-rich papers is wasteful).
-  const filter =
+  // Pull abstracts; client-side filter to those missing CI when onlyMissing.
+  const allRows = await db
+    .select()
+    .from(papers)
+    .where(isNotNull(papers.abstract))
+    .limit(cap * 3);
+  const rows =
     onlyMissing === false
-      ? isNotNull(papers.abstract)
-      : and(
-          isNotNull(papers.abstract),
-          or(
-            sql`${papers.clinicalImplications} IS NULL`,
-            sql`length(${papers.clinicalImplications}) < 50`
+      ? allRows.slice(0, cap)
+      : allRows
+          .filter(
+            (r) => !r.clinicalImplications || r.clinicalImplications.length < 50
           )
-        );
-  const rows = await db.select().from(papers).where(filter).limit(cap);
+          .slice(0, cap);
 
   let updated = 0;
   let skipped = 0;

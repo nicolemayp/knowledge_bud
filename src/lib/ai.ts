@@ -61,13 +61,25 @@ export async function summarisePaper(args: {
   ].join("\n");
 
   try {
-    const res = await groq.chat.completions.create({
-      model: MODEL_SUMMARY,
-      messages: [{ role: "user", content: prompt }],
-      temperature: 0.2,
-      max_tokens: 700,
-      response_format: { type: "json_object" },
-    });
+    // Hard 25-second timeout per call so the cron doesn't hang on a stalled
+    // Groq response. The SDK respects AbortSignal.
+    const ac = new AbortController();
+    const timer = setTimeout(() => ac.abort(), 25_000);
+    let res;
+    try {
+      res = await groq.chat.completions.create(
+        {
+          model: MODEL_SUMMARY,
+          messages: [{ role: "user", content: prompt }],
+          temperature: 0.2,
+          max_tokens: 700,
+          response_format: { type: "json_object" },
+        },
+        { signal: ac.signal }
+      );
+    } finally {
+      clearTimeout(timer);
+    }
     const text = res.choices[0]?.message?.content ?? "";
     let parsed: { is_clinical?: boolean; bluf?: string; clinical_implications?: string };
     try {
