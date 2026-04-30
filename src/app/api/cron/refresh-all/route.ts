@@ -3,7 +3,7 @@ import { sql } from "drizzle-orm";
 import { getDb, hasDb } from "@/lib/db/client";
 import { papers, refreshLog, sourcesState } from "@/lib/db/schema";
 import { getFetcher } from "@/lib/sources/index";
-import { PUBMED_TOPIC_QUERY } from "@/lib/topics";
+import { PUBMED_TOPIC_QUERY, isClinicallyRelevant } from "@/lib/topics";
 import { computeReading } from "@/lib/reading";
 import { summarisePaper, getGroq } from "@/lib/ai";
 
@@ -71,6 +71,7 @@ export async function GET(req: Request) {
           continue;
         }
         for (const r of records) {
+          if (!isClinicallyRelevant(r.abstract)) continue;
           let bluf: string | null = firstSentence(r.abstract) ?? r.title;
           let clinicalImplications: string | null = null;
           let blufIsAi = false;
@@ -79,7 +80,8 @@ export async function GET(req: Request) {
               title: r.title,
               abstract: r.abstract,
             });
-            if (ai) {
+            if (ai && "skip" in ai) continue;
+            if (ai && "bluf" in ai) {
               bluf = ai.bluf;
               clinicalImplications = ai.clinicalImplications;
               blufIsAi = true;

@@ -5,7 +5,7 @@ import { getUserId } from "@/lib/auth";
 import { getDb, hasDb } from "@/lib/db/client";
 import { papers, refreshLog, sourcesState } from "@/lib/db/schema";
 import { getFetcher } from "@/lib/sources/index";
-import { PUBMED_TOPIC_QUERY } from "@/lib/topics";
+import { PUBMED_TOPIC_QUERY, isClinicallyRelevant } from "@/lib/topics";
 import { computeReading } from "@/lib/reading";
 import { summarisePaper, getGroq } from "@/lib/ai";
 
@@ -75,6 +75,8 @@ export async function POST(
       }
 
       for (const r of records) {
+        // Skip preclinical / animal-only papers — they slip past [mh] tags
+        if (!isClinicallyRelevant(r.abstract)) continue;
         // Generate AI BLUF + clinical implications when Groq is available
         // and we have an abstract to summarise.
         let bluf: string | null = firstSentence(r.abstract) ?? r.title;
@@ -86,7 +88,8 @@ export async function POST(
             abstract: r.abstract,
             evidence: source.reliability,
           });
-          if (ai) {
+          if (ai && "skip" in ai) continue; // AI judged non-clinical
+          if (ai && "bluf" in ai) {
             bluf = ai.bluf;
             clinicalImplications = ai.clinicalImplications;
             blufIsAi = true;

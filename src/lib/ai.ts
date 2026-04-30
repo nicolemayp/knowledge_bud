@@ -17,20 +17,26 @@ export const MODEL = "llama-3.3-70b-versatile";
  *
  * Returns null if Groq isn't configured or the call fails.
  */
+export type SummariseResult =
+  | { bluf: string; clinicalImplications: string }
+  | { skip: true }
+  | null;
+
 export async function summarisePaper(args: {
   title: string;
   abstract: string;
   evidence?: string;
-}): Promise<{ bluf: string; clinicalImplications: string } | null> {
+}): Promise<SummariseResult> {
   const groq = getGroq();
   if (!groq) return null;
 
   const prompt = [
-    "You write summaries of mental-health research papers for therapists.",
-    "Given the abstract below, output strict JSON with two fields:",
-    `  - "bluf": ONE sentence (max 30 words) stating the main finding in plain English. Include numbers if present.`,
-    `  - "clinical_implications": ONE-TO-TWO sentences (max 60 words) telling a working therapist how to apply (or NOT apply) this knowledge in practice. Be concrete: who, when, and what to consider. If the evidence is weak or preliminary, say so explicitly.`,
-    "Do not invent statistics that aren't in the abstract.",
+    "You write summaries of mental-health research papers for working therapists.",
+    "Given the abstract below, output strict JSON with three fields:",
+    `  - "is_clinical": boolean — true ONLY if this paper has direct relevance to clinical mental-health practice with humans. Set FALSE for: pure-animal studies, in-vitro work, basic neuroscience without clinical implications, device engineering without efficacy data, papers about other medical conditions (cancer, cardiovascular) unless they include a mental-health outcome.`,
+    `  - "bluf": ONE sentence (max 30 words). State the main finding in plain English. INCLUDE specific numbers when the abstract has them (sample size, effect size, p-value, percentage change). Avoid vague phrases like "shows promise."`,
+    `  - "clinical_implications": ONE-TO-TWO sentences (max 60 words) telling a working therapist how to apply (or NOT apply) this knowledge with real clients. Be concrete: which clients, what to do, how. If the evidence is weak/preliminary/preclinical, say so plainly and recommend NOT changing practice yet.`,
+    "Never invent statistics that aren't in the abstract.",
     "Output ONLY the JSON, no preamble.",
     "",
     `Title: ${args.title}`,
@@ -48,6 +54,10 @@ export async function summarisePaper(args: {
     });
     const text = res.choices[0]?.message?.content ?? "";
     const parsed = JSON.parse(text);
+    if (parsed.is_clinical === false) {
+      // Caller should skip insertion of non-clinical papers.
+      return { skip: true } as const;
+    }
     if (
       typeof parsed.bluf === "string" &&
       typeof parsed.clinical_implications === "string"
