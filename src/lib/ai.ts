@@ -9,7 +9,12 @@ export function getGroq(): Groq | null {
   return _groq;
 }
 
-export const MODEL = "llama-3.3-70b-versatile";
+// Big model for chat (askWithContext) — slow but smart.
+export const MODEL_CHAT = "llama-3.3-70b-versatile";
+// Smaller model for paper summaries — much higher TPM headroom on free tier.
+export const MODEL_SUMMARY = "llama-3.1-8b-instant";
+// Back-compat for callers
+export const MODEL = MODEL_CHAT;
 
 /**
  * Generate a BLUF (1-sentence finding) + clinical implications (1–2 sentences)
@@ -57,10 +62,10 @@ export async function summarisePaper(args: {
 
   try {
     const res = await groq.chat.completions.create({
-      model: MODEL,
+      model: MODEL_SUMMARY,
       messages: [{ role: "user", content: prompt }],
       temperature: 0.2,
-      max_tokens: 900,
+      max_tokens: 700,
       response_format: { type: "json_object" },
     });
     const text = res.choices[0]?.message?.content ?? "";

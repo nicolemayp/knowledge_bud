@@ -32,18 +32,16 @@ const SOURCE_LABEL: Record<string, string> = {
 // PubMed E-utilities allows 3 req/s without API key, 10 req/s with.
 const SOURCES = ["pubmed"] as const;
 
-// Smaller curated topic set so we fit Groq's TPM rate limits comfortably.
-// (Groq llama-3.3-70b: ~30 RPM, ~12k TPM on free tier.)
+// Curated 20-topic set, balanced across modalities/diagnoses/clinical concepts.
+// Groq llama-3.1-8b free tier: ~30 RPM, ~6k TPM.
+// 20 topics × 1 paper per topic ≈ 20 Groq calls × ~700 tokens = 14k tokens.
+// At 1.5s pacing = 30s of calls — fits well within rate limits.
 const CRON_TOPICS = [
-  "cbt", "dbt", "act", "emdr", "ifs", "somatic", "polyvagal",
-  "mbsr", "mi", "cft",
-  "music", "art", "play",
-  "attention", "neuroplasticity", "sleep", "stress", "attachment",
-  "alliance", "burnout", "trauma-informed",
-  "trauma", "ptsd", "complex-ptsd", "depression", "anxiety", "ocd",
-  "bpd", "adhd", "eating", "addiction", "suicide", "grief",
-  "adolescent", "perinatal", "couples", "older-adults",
-  "psychedelics",
+  "cbt", "dbt", "act", "emdr", "somatic", "polyvagal", "mbsr",
+  "music", "art",
+  "trauma", "ptsd", "depression", "anxiety", "ocd", "bpd",
+  "addiction", "suicide", "grief",
+  "adolescent", "perinatal",
 ];
 
 export const maxDuration = 300; // 5 min — Vercel max for hobby plan
@@ -86,7 +84,7 @@ export async function GET(req: Request) {
         if (!query) continue;
         let records;
         try {
-          records = await fetcher(query, { sinceDays: 35, max: 2 });
+          records = await fetcher(query, { sinceDays: 35, max: 1 });
         } catch {
           summary[slug].errors++;
           continue;
