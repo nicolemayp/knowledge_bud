@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
+import { useSearchParams, useRouter } from "next/navigation";
 import { PaperCard, type PaperLike } from "@/components/PaperCard";
 import { SAMPLE_PAPERS } from "@/lib/sample-papers";
 import { TOPICS } from "@/lib/topics";
@@ -34,6 +35,7 @@ type DbPaper = {
   year: number | null;
   topics: string[];
   url: string;
+  doi: string | null;
   readingMinutes: number | null;
   jargon: "plain" | "medium" | "heavy" | null;
   evidence: string;
@@ -68,6 +70,7 @@ function dbToPaperLike(p: DbPaper): PaperLike {
     sourceTone: src.tone,
     evidenceKind: p.evidence !== "unknown" ? p.evidence : null,
     url: p.url,
+    doi: p.doi,
     topics: p.topics ?? [],
     readingMinutes: p.readingMinutes,
     jargon: p.jargon,
@@ -76,9 +79,25 @@ function dbToPaperLike(p: DbPaper): PaperLike {
 }
 
 export default function FeedPage() {
-  const [topic, setTopic] = useState("all");
+  const searchParams = useSearchParams();
+  const router = useRouter();
+  const initialTopic = searchParams.get("topic") ?? "all";
+  const [topic, setTopic] = useState(initialTopic);
   const [livePapers, setLivePapers] = useState<PaperLike[] | null>(null);
   const [loaded, setLoaded] = useState(false);
+
+  // Sync URL param → state (handles back/forward and re-clicks from Topics page)
+  useEffect(() => {
+    const fromUrl = searchParams.get("topic") ?? "all";
+    if (fromUrl !== topic) setTopic(fromUrl);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [searchParams]);
+
+  function setTopicAndUrl(next: string) {
+    setTopic(next);
+    if (next === "all") router.replace("/feed");
+    else router.replace(`/feed?topic=${encodeURIComponent(next)}`);
+  }
 
   useEffect(() => {
     let cancelled = false;
@@ -100,9 +119,21 @@ export default function FeedPage() {
   const all: PaperLike[] = livePapers ?? SAMPLE_PAPERS;
   const usingSamples = livePapers === null;
 
+  // Topic key may be either an id (cbt) or a label fragment.
+  // Match on key, label keywords, and bluf text.
   const papers = useMemo(() => {
     if (topic === "all") return all;
-    return all.filter((p) => matches(p, topic));
+    const t = TOPICS.find((x) => x.id === topic);
+    const tokens = (t?.label ?? topic)
+      .toLowerCase()
+      .split(/[^\w]+/)
+      .filter((s) => s.length > 2);
+    const key = topic.toLowerCase();
+    return all.filter((p) => {
+      if (p.topics?.some((tag) => tag.toLowerCase().includes(key))) return true;
+      const hay = `${p.bluf} ${p.title} ${(p.clinicalImplications ?? "")}`.toLowerCase();
+      return tokens.some((tok) => hay.includes(tok));
+    });
   }, [topic, all]);
 
   return (
@@ -132,7 +163,7 @@ export default function FeedPage() {
       <div className="-mx-4 px-4 mb-5 overflow-x-auto pb-1">
         <div className="flex gap-2 w-max">
           <button
-            onClick={() => setTopic("all")}
+            onClick={() => setTopicAndUrl("all")}
             className={`shrink-0 inline-flex items-center gap-1.5 rounded-full px-3.5 py-2 text-sm font-display font-semibold border-2 whitespace-nowrap transition-all ${
               topic === "all"
                 ? "bg-gradient-to-r from-pink-400 to-lavender-400 text-white border-transparent shadow-soft scale-105"
@@ -147,7 +178,7 @@ export default function FeedPage() {
             return (
               <button
                 key={t.id}
-                onClick={() => setTopic(t.id)}
+                onClick={() => setTopicAndUrl(t.id)}
                 className={`shrink-0 inline-flex items-center gap-1.5 rounded-full px-3.5 py-2 text-sm font-display font-semibold border-2 whitespace-nowrap transition-all ${
                   active
                     ? "bg-gradient-to-r from-pink-400 to-lavender-400 text-white border-transparent shadow-soft scale-105"

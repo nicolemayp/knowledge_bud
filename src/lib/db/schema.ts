@@ -232,3 +232,31 @@ export const emailDigestPrefs = pgTable("email_digest_prefs", {
     .notNull()
     .defaultNow(),
 });
+
+// ─── MAGIC-LINK AUTH ──────────────────────────────────────────────
+export const loginTokens = pgTable("login_tokens", {
+  token: text("token").primaryKey(),       // hex, 32+ bytes
+  email: text("email").notNull(),
+  userId: text("user_id"),                 // populated after first claim
+  expiresAt: timestamp("expires_at", { withTimezone: true }).notNull(),
+  consumedAt: timestamp("consumed_at", { withTimezone: true }),
+  createdAt: timestamp("created_at", { withTimezone: true })
+    .notNull()
+    .defaultNow(),
+});
+
+// ─── PODCAST EPISODES ─────────────────────────────────────────────
+export const podcastEpisodes = pgTable("podcast_episodes", {
+  id: id(),
+  monthKey: text("month_key").notNull().unique(),  // e.g. "2026-05"
+  title: text("title").notNull(),
+  description: text("description"),
+  script: text("script"),                          // full TTS script
+  audioUrl: text("audio_url"),                     // URL of the MP3 in Vercel Blob
+  durationSec: integer("duration_sec"),
+  paperIds: jsonb("paper_ids").$type<string[]>().notNull().default([]),
+  status: text("status").notNull().default("pending"), // pending | generating | ready | failed
+  createdAt: timestamp("created_at", { withTimezone: true })
+    .notNull()
+    .defaultNow(),
+});

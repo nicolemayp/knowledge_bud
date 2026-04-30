@@ -18,6 +18,7 @@ type DbPaper = {
   year: number | null;
   topics: string[];
   url: string;
+  doi: string | null;
   readingMinutes: number | null;
   jargon: "plain" | "medium" | "heavy" | null;
   evidence: string;
@@ -50,6 +51,7 @@ function dbToPaperLike(p: DbPaper): PaperLike {
     sourceTone: src.tone,
     evidenceKind: p.evidence !== "unknown" ? p.evidence : null,
     url: p.url,
+    doi: p.doi,
     topics: p.topics ?? [],
     readingMinutes: p.readingMinutes,
     jargon: p.jargon,

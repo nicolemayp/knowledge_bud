@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState, useMemo } from "react";
+import Link from "next/link";
 import { TOPICS, TOPIC_GROUPS } from "@/lib/topics";
 
 type DbTopic = {
@@ -17,7 +18,6 @@ export default function TopicsPage() {
   const [savingKey, setSavingKey] = useState<string | null>(null);
   const [loaded, setLoaded] = useState(false);
 
-  // Load existing prefs from DB
   useEffect(() => {
     let cancelled = false;
     fetch("/api/topics")
@@ -52,7 +52,13 @@ export default function TopicsPage() {
     []
   );
 
-  async function toggleDefault(key: string, label: string) {
+  async function toggleDefault(
+    e: React.MouseEvent,
+    key: string,
+    label: string
+  ) {
+    e.preventDefault();
+    e.stopPropagation();
     const next = !enabled[key];
     setEnabled({ ...enabled, [key]: next });
     setSavingKey(key);
@@ -100,15 +106,15 @@ export default function TopicsPage() {
           Your topics 🌷
         </h1>
         <p className="text-sm text-ink-soft">
-          Pick what to follow. Each refresh pulls new research matching your
-          enabled topics. Add anything specific in <em>Custom topics</em>.
+          <span className="font-display font-semibold text-pink-600">Tap any topic</span> to see its papers in the Feed.
+          Tap the <span className="inline-block w-2.5 h-2.5 align-middle rounded-full bg-pink-400 mx-1"></span> dot to follow / unfollow (controls what we pull on each refresh).
         </p>
         <p className="text-[11px] text-ink-mute mt-1">
           {!loaded
             ? "Loading…"
             : `${enabledCount} default topic${
                 enabledCount === 1 ? "" : "s"
-              } on · ${custom.length} custom · saved to your account`}
+              } followed · ${custom.length} custom · saved to your account`}
         </p>
       </header>
 
@@ -131,25 +137,45 @@ export default function TopicsPage() {
               const on = enabled[t.id] ?? false;
               const saving = savingKey === t.id;
               return (
-                <button
+                <Link
                   key={t.id}
-                  onClick={() => toggleDefault(t.id, t.label)}
-                  disabled={saving}
+                  href={`/feed?topic=${encodeURIComponent(t.id)}`}
                   className={`flex items-center gap-2 rounded-2xl border-2 px-3 py-2.5 text-left text-sm font-display font-semibold transition-all ${
                     on
                       ? "bg-gradient-to-r from-pink-50 to-lavender-50 border-pink-300 text-ink"
                       : "bg-white border-pink-100 text-ink-mute hover:border-pink-200"
-                  } ${saving ? "opacity-50" : ""}`}
+                  }`}
                 >
                   <span className="text-xl">{t.emoji}</span>
                   <span className="flex-1">{t.label}</span>
-                  <span
-                    className={`w-3 h-3 rounded-full ${
-                      on ? "bg-pink-400" : "bg-pink-100"
-                    }`}
-                    aria-hidden="true"
-                  />
-                </button>
+                  <button
+                    onClick={(e) => toggleDefault(e, t.id, t.label)}
+                    disabled={saving}
+                    aria-label={on ? `Unfollow ${t.label}` : `Follow ${t.label}`}
+                    className={`w-5 h-5 rounded-full flex items-center justify-center transition-all ${
+                      on
+                        ? "bg-pink-400 hover:bg-pink-500"
+                        : "bg-pink-100 hover:bg-pink-200"
+                    } ${saving ? "opacity-50" : ""}`}
+                  >
+                    {on && (
+                      <svg
+                        viewBox="0 0 12 12"
+                        className="w-3 h-3 text-white"
+                        aria-hidden="true"
+                      >
+                        <path
+                          d="M2 6 L5 9 L10 3"
+                          stroke="currentColor"
+                          strokeWidth="1.6"
+                          fill="none"
+                          strokeLinecap="round"
+                          strokeLinejoin="round"
+                        />
+                      </svg>
+                    )}
+                  </button>
+                </Link>
               );
             })}
           </div>
@@ -184,19 +210,24 @@ export default function TopicsPage() {
         ) : (
           <div className="flex flex-wrap gap-2">
             {custom.map((c) => (
-              <span
+              <Link
                 key={c.key}
+                href={`/feed?topic=${encodeURIComponent(c.key)}`}
                 className="chip bg-lavender-50 text-lavender-700 border border-lavender-200"
               >
                 {c.label}
                 <button
-                  onClick={() => removeCustom(c.key)}
+                  onClick={(e) => {
+                    e.preventDefault();
+                    e.stopPropagation();
+                    removeCustom(c.key);
+                  }}
                   className="ml-1 text-lavender-500 hover:text-pink-500"
                   aria-label={`Remove ${c.label}`}
                 >
                   ✕
                 </button>
-              </span>
+              </Link>
             ))}
           </div>
         )}

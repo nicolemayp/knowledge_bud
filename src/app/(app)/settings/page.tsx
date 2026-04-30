@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 import { SOURCES, formatLimit } from "@/lib/sources";
 import { EmailSubscribe } from "@/components/EmailSubscribe";
 import { PushSubscribe } from "@/components/PushSubscribe";
+import { PodcastPlayer } from "@/components/PodcastPlayer";
 
 type SourceState = {
   slug: string;
@@ -113,6 +114,11 @@ export default function SettingsPage() {
       <section className="rounded-3xl bg-white/85 border border-pink-100 shadow-soft p-5">
         <h2 className="font-display font-bold text-lg mb-2">🔔 Push notifications</h2>
         <PushSubscribe />
+      </section>
+
+      <section className="rounded-3xl bg-white/85 border border-pink-100 shadow-soft p-5">
+        <h2 className="font-display font-bold text-lg mb-2">🎙️ Monthly podcast</h2>
+        <PodcastPlayer />
       </section>
 
       <section className="rounded-3xl bg-white/85 border border-pink-100 shadow-soft p-5">
