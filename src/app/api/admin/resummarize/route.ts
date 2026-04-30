@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { eq, isNotNull } from "drizzle-orm";
+import { eq, isNotNull, and, or, sql } from "drizzle-orm";
 import { getDb, hasDb } from "@/lib/db/client";
 import { papers } from "@/lib/db/schema";
 import { summarisePaper, getGroq } from "@/lib/ai";
@@ -27,23 +27,35 @@ export async function POST(req: Request) {
     return NextResponse.json({ error: "Groq not configured" }, { status: 503 });
   }
 
-  const { limit } = (await req.json().catch(() => ({}))) as { limit?: number };
+  const { limit, onlyMissing } = (await req.json().catch(() => ({}))) as {
+    limit?: number;
+    onlyMissing?: boolean;
+  };
   const cap = Math.min(limit ?? 200, 200);
 
   const db = getDb();
-  const rows = await db
-    .select()
-    .from(papers)
-    .where(isNotNull(papers.abstract))
-    .limit(cap);
+  // Default: only re-summarize papers with missing or short clinical implications
+  // (saves Groq quota — re-running on already-rich papers is wasteful).
+  const filter =
+    onlyMissing === false
+      ? isNotNull(papers.abstract)
+      : and(
+          isNotNull(papers.abstract),
+          or(
+            sql`${papers.clinicalImplications} IS NULL`,
+            sql`length(${papers.clinicalImplications}) < 50`
+          )
+        );
+  const rows = await db.select().from(papers).where(filter).limit(cap);
 
   let updated = 0;
   let skipped = 0;
   let dropped = 0;
   let errors = 0;
 
-  // Groq free tier ~30 RPM — pace calls at 2.2s each.
-  const PACE_MS = 2200;
+  // Groq llama-3.1-8b-instant free tier: 6k TPM. Each call ~1k tokens.
+  // 6 calls/min = 10s pacing. Stay safely under the limit.
+  const PACE_MS = 5000;
   let lastErrors: string[] = [];
 
   for (const p of rows) {
