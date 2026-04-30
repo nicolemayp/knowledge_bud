@@ -8,7 +8,16 @@ import { computeReading } from "@/lib/reading";
 import { summarisePaper, getGroq } from "@/lib/ai";
 import { sendDigest, type DigestPaper } from "@/lib/email";
 import { sendPushTo } from "@/lib/push";
-import { pushSubscriptions } from "@/lib/db/schema";
+import { pushSubscriptions, podcastEpisodes } from "@/lib/db/schema";
+import {
+  generateScript,
+  scriptToAudio,
+  uploadAudio,
+  currentMonthKey,
+  monthLabel as monthLabelFn,
+  estimateDurationSec,
+  type ScriptPaper,
+} from "@/lib/podcast";
 
 const SOURCE_LABEL: Record<string, string> = {
   pubmed: "PubMed",
@@ -159,9 +168,12 @@ export async function GET(req: Request) {
     }
   }
 
-  // After refresh: send digests + push notifications.
+  // After refresh: send digests + push + generate this month's podcast.
   let emailSummary: { sent: number; failed: number } = { sent: 0, failed: 0 };
   let pushSummary: { sent: number; failed: number } = { sent: 0, failed: 0 };
+  let podcastSummary: { ok: boolean; audioUrl?: string; error?: string } = {
+    ok: false,
+  };
   try {
     emailSummary = await sendMonthlyDigest();
   } catch (e) {
@@ -174,6 +186,12 @@ export async function GET(req: Request) {
   } catch (e) {
     console.error("[cron] push failed:", e);
   }
+  try {
+    podcastSummary = await generateMonthlyPodcast();
+  } catch (e) {
+    console.error("[cron] podcast failed:", e);
+    podcastSummary = { ok: false, error: e instanceof Error ? e.message : "Failed" };
+  }
 
   return NextResponse.json({
     ok: true,
@@ -181,7 +199,73 @@ export async function GET(req: Request) {
     summary,
     emailSummary,
     pushSummary,
+    podcastSummary,
   });
+}
+
+async function generateMonthlyPodcast(): Promise<{
+  ok: boolean;
+  audioUrl?: string;
+  error?: string;
+}> {
+  const db = getDb();
+  const recent = await db
+    .select()
+    .from(papers)
+    .orderBy(desc(papers.fetchedAt))
+    .limit(8);
+  if (recent.length === 0) return { ok: false, error: "No papers" };
+
+  const sources: ScriptPaper[] = recent.map((p) => ({
+    title: p.title,
+    bluf: p.bluf,
+    clinicalImplications: p.clinicalImplications,
+    journal: p.journal,
+    year: p.year,
+    evidence: p.evidence !== "unknown" ? p.evidence : null,
+  }));
+
+  const monthKey = currentMonthKey();
+  const month = monthLabelFn();
+
+  const script = await generateScript({ papers: sources, monthLabel: month });
+  if (!script) return { ok: false, error: "Script failed" };
+
+  const audio = await scriptToAudio(script);
+  if (!audio) return { ok: false, error: "TTS failed" };
+
+  const audioUrl = await uploadAudio({ monthKey, buffer: audio });
+  if (!audioUrl) return { ok: false, error: "Upload failed" };
+
+  const duration = estimateDurationSec(script);
+  const description = script.split(/\n\s*\n/)[0]?.replace(/\s+/g, " ").trim().slice(0, 240) ?? null;
+
+  await db
+    .insert(podcastEpisodes)
+    .values({
+      monthKey,
+      title: `Knowledge Bud — ${month}`,
+      description,
+      script,
+      audioUrl,
+      durationSec: duration,
+      paperIds: recent.map((r) => r.id),
+      status: "ready",
+    })
+    .onConflictDoUpdate({
+      target: podcastEpisodes.monthKey,
+      set: {
+        title: `Knowledge Bud — ${month}`,
+        description,
+        script,
+        audioUrl,
+        durationSec: duration,
+        paperIds: recent.map((r) => r.id),
+        status: "ready",
+      },
+    });
+
+  return { ok: true, audioUrl };
 }
 
 async function sendMonthlyPush(
